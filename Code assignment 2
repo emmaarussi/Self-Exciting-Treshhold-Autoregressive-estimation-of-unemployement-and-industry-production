@@ -1,0 +1,860 @@
+######## GROUP ASSIGNMENT 2, ADVANCED ECONOMETRICS CODING PART #########
+#AUTHORS:
+#Niels van Herk
+#Emma Arussi
+#Marta Chejduk
+#Tess Scholtus
+
+##### PART 1 ####### PREP DATA
+#importing files
+import numpy as np
+from scipy.optimize import least_squares
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+from statsmodels.graphics.tsaplots import plot_acf
+import numdifftools as nd
+from sklearn.metrics import r2_score
+from scipy import stats
+
+#readfile
+df = pd.read_csv("/Users/tessscholtus/Downloads/2024-07.csv", skiprows=[1])
+print(df.head())
+
+#convert the 'sasdate' column to datetime format
+df['sasdate'] = pd.to_datetime(df['sasdate'])
+
+#filter the dataset to include only data up to December 2019
+df = df[df['sasdate'] <= '2019-12-31']
+
+#extract: 'sasdates', 'UNRATE', 'INDPRO'
+df = df[['sasdate', 'UNRATE', 'INDPRO']]
+
+#take the first differences of both 'UNRATE' and 'INDPRO'
+df['UNRATE_diff'] = df['UNRATE'].diff()
+df['INDPRO_diff'] = df['INDPRO'].diff()
+df.dropna(subset=['UNRATE_diff', 'INDPRO_diff'], inplace=True)
+
+x = df['UNRATE_diff'].values
+z = df['INDPRO_diff'].values
+
+
+#plotting to check if we are working with the correct dataset
+plt.figure(figsize=(10, 8))
+
+#Plot for UNRATE (first differences)
+plt.subplot(2, 1, 1)
+plt.plot(df['sasdate'], df['UNRATE_diff'], color='black')
+plt.title('US unemployment rate (month-on-month)')
+plt.xlabel('Date')
+plt.ylabel('first difference of unemployement rate')
+
+#Plot for INDPRO (first differences)
+plt.subplot(2, 1, 2)
+plt.plot(df['sasdate'], df['INDPRO_diff'], color='black')
+plt.title('US industrial production (month-on-month)')
+plt.xlabel('Date')
+plt.ylabel('first difference of industrial production')
+
+plt.tight_layout()
+plt.show()
+
+
+############## QUESTION2 #################
+#AR-MODEL
+#Define the AR(1) model
+def ar_model(theta, x):
+    mu, delta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+
+    for t in range(1, T):
+        x_pred = mu + delta * x[t-1]  # AR(1) prediction
+        residuals[t-1] = x[t] - x_pred  # Residuals = observed - predicted
+    return residuals
+
+#Objective function to calculate total loss (Sum of Squared Residuals)
+def ar_loss(theta, x):
+    residuals = ar_model(theta, x)
+    total_loss = np.sum(residuals**2)
+    return total_loss
+
+#Given parameter vector θ = (mu, delta) for AR(1) model
+theta_ar = [0, 0.1]
+
+#Calculate the total loss (Sum of Squared Residuals) for the AR(1) model
+total_loss_ar = ar_loss(theta_ar, x)
+
+#Print the total loss for AR(1) model
+print(f"Total Loss for AR(1) model with θ = {theta_ar}: {total_loss_ar}")
+
+#SESTARMODEL
+# SESTAR Model function
+def sestar_model(theta, x):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function to minimize (Sum of Squared Errors)
+def sestar_loss(theta, x):
+    residuals = sestar_model(theta, x)
+    total_loss = np.sum(residuals**2)
+    return total_loss
+
+# Initial guess for parameters [mu, delta, gamma, alpha, beta]
+initial_theta = [0, 0.1, 2, 0, 3]
+
+# Calculate the total loss (Sum of Squared Residuals)
+total_loss = sestar_loss(initial_theta, x)
+
+print(f"Total Loss for SESTAR: {initial_theta}: {total_loss}")
+
+#STARMODEL
+# STAR Model function
+def star_model(theta, x, z):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+
+    for t in range(1, T):
+        # Logistic transition function based on z[t-1]
+        logistic_term = 1 / (1 + np.exp(alpha + beta * z[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred  # Residuals = observed - predicted
+    return residuals
+
+#Objective function to minimize (Sum of Squared Errors)
+def star_loss(theta, x, z):
+    residuals = star_model(theta, x, z)
+    total_loss = np.sum(residuals**2)  # Sum of squared residuals
+    return total_loss
+
+#Initial guess for parameters [mu, delta, gamma, alpha, beta]
+initial_theta_star = [0, 0.1, 2, 0, 3]
+
+#Calculate the total loss (Sum of Squared Residuals) for the STAR model
+total_loss_star = star_loss(initial_theta_star, x, z)
+
+print(f"Total Loss for STAR model with θ = {initial_theta_star}: {total_loss_star}")
+
+
+#######QUESTION 3#######
+# Define the AR(1) model function
+def ar_model(theta, x):
+    mu, delta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+    for t in range(1, T):
+        x_pred = mu + delta * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Define the objective  function for AR(1)
+def ar_loss(theta, x):
+    residuals = ar_model(theta, x)
+    return np.sum(residuals**2)
+
+# SESTAR Model function
+def sestar_model(theta, x):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function for SESTAR
+def sestar_loss(theta, x):
+    residuals = sestar_model(theta, x)
+    return np.sum(residuals**2)
+
+# STAR Model function
+def star_model(theta, x, z):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * z[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function for STAR
+def star_loss(theta, x, z):
+    residuals = star_model(theta, x, z)
+    return np.sum(residuals**2)
+
+# Optimization settings for AR, SESTAR, and STAR models
+initial_theta_ar = [0, 0.3]
+initial_theta_sestar = [0, 0.3, 0, 0, 6]
+initial_theta_star = [0, 0.3, 0, 0, 6]
+
+# Optimize the AR(1) model
+result_ar = minimize(ar_loss, initial_theta_ar, args=(x,))
+fitted_ar = result_ar.x
+
+# Optimize the SESTAR model
+def optimize_sestar(initial_theta_sestar, x):
+    # Define bounds corresponding to the parameters in initial_theta_sestar
+    bounds = [(-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000)]
+
+    result_sestar = minimize(sestar_loss, initial_theta_sestar, args=(x,), method='L-BFGS-B', bounds=bounds)
+    return result_sestar.x  # Return the optimized parameters (fitted values)
+
+# Call the optimize_sestar function
+fitted_sestar = optimize_sestar(initial_theta_sestar, x,)
+
+# Optimize the STAR model
+def optimize_star(initial_theta_star, x, z):
+    # Define bounds corresponding to the parameters in initial_theta_star
+    bounds = [(-1000, 10000),  # big bounds
+              (-1000, 10000),  # big bounds
+              (-1000, 10000),  # big bounds
+              (-1000, 10000),  # big bounds
+              (-1000, 10000)]
+
+    result_star = minimize(star_loss, initial_theta_star, args=(x, z), method='L-BFGS-B', bounds=bounds)
+    return result_star.x  # Return the optimized parameters (fitted values)
+
+# Call the optimize_sestar function
+fitted_star = optimize_star(initial_theta_star, x, z)
+
+# Calculate fitted values for plotting
+def calculate_fitted_values(model, theta, x, z=None):
+    T = len(x)
+    fitted_values = np.zeros(T)
+    if model == 'AR':
+        mu, delta = theta
+        for t in range(1, T):
+            fitted_values[t] = mu + delta * x[t-1]
+    elif model == 'SESTAR':
+        mu, delta, gamma, alpha, beta = theta
+        for t in range(1, T):
+            logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+            fitted_values[t] = mu + (delta + gamma * logistic_term) * x[t-1]
+    elif model == 'STAR':
+        mu, delta, gamma, alpha, beta = theta
+        for t in range(1, T):
+            logistic_term = 1 / (1 + np.exp(alpha + beta * z[t-1]))
+            fitted_values[t] = mu + (delta + gamma * logistic_term) * x[t-1]
+    return fitted_values
+
+# Calculate fitted values for each model
+fitted_values_ar = calculate_fitted_values('AR', fitted_ar, x)
+fitted_values_sestar = calculate_fitted_values('SESTAR', fitted_sestar, x)
+fitted_values_star = calculate_fitted_values('STAR', fitted_star, x, z)
+
+print("Fitted Estimates for AR(1):", fitted_ar)
+print("Fitted Estimates for SESTAR:", fitted_sestar)
+print("Fitted Estimates for STAR:", fitted_star)
+
+# Plotting the fitted values
+plt.figure(figsize=(14, 12))
+
+# Main title for the figure
+plt.suptitle('Fitted Values of UNRATE Differences for Different Models', fontsize=16)
+
+# AR(1) plot
+plt.subplot(3, 1, 1)
+plt.plot(df['sasdate'], x, label='Observed UNRATE diff', color='black', alpha=0.5)
+plt.plot(df['sasdate'], fitted_values_ar, label='Fitted AR(1)', color='red')
+plt.title('AR(1) Model')
+plt.xlabel('Date')
+plt.ylabel('UNRATE diff')
+plt.grid(True)
+plt.legend()
+
+# SESTAR plot
+plt.subplot(3, 1, 2)
+plt.plot(df['sasdate'], x, label='Observed UNRATE diff', color='black', alpha=0.5)
+plt.plot(df['sasdate'], fitted_values_sestar, label='Fitted SESTAR', color='blue')
+plt.title('SESTAR Model')
+plt.xlabel('Date')
+plt.ylabel('UNRATE diff')
+plt.grid(True)
+plt.legend()
+
+# STAR plot
+plt.subplot(3, 1, 3)
+plt.plot(df['sasdate'], x, label='Observed UNRATE diff', color='black', alpha=0.5)
+plt.plot(df['sasdate'], fitted_values_star, label='Fitted STAR', color='green')
+plt.title('STAR Model')
+plt.xlabel('Date')
+plt.ylabel('UNRATE diff')
+plt.grid(True)
+plt.legend()
+
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+plt.show()
+
+#results after optimization for AR(1) model
+result_ar = minimize(ar_loss, initial_theta_ar, args=(x,))
+if result_ar.success:
+    print("AR(1) model optimization converged successfully.")
+else:
+    print(f"AR(1) model optimization failed: {result_ar.message}")
+print(f"Final function value (AR): {result_ar.fun}")
+
+#results after optimiz for SESTAR and STAR models
+result_sestar = minimize(sestar_loss, initial_theta_sestar, args=(x,))
+if result_sestar.success:
+    print("SESTAR model optimization converged successfully.")
+else:
+    print(f"SESTAR model optimization failed: {result_sestar.message}")
+print(f"Final function value (SESTAR): {result_sestar.fun}")
+
+result_star = minimize(star_loss, initial_theta_star, args=(x, z))
+if result_star.success:
+    print("STAR model optimization converged successfully.")
+else:
+    print(f"STAR model optimization failed: {result_star.message}")
+print(f"Final function value (STAR): {result_star.fun}")
+
+# Define standard configurations
+standard_theta_ar = [0, 0.1]
+standard_loss_ar = ar_loss(standard_theta_ar, x)
+
+print(f"Standard function value (AR): {standard_loss_ar}")
+print(f"Improvement in AR(1) model: {standard_loss_ar - result_ar.fun}")
+
+# Repeat for SESTAR and STAR with their respective standard configurations
+standard_theta_sestar = [0, 0.1, 0, 0, 0]
+standard_loss_sestar = sestar_loss(standard_theta_sestar, x)
+print(f"Standard function value (SESTAR): {standard_loss_sestar}")
+print(f"Improvement in SESTAR model: {standard_loss_sestar - result_sestar.fun}")
+
+standard_theta_star = [0, 0.1, 0, 0, 0]
+standard_loss_star = star_loss(standard_theta_star, x, z)
+print(f"Standard function value (STAR): {standard_loss_star}")
+print(f"Improvement in STAR model: {standard_loss_star - result_star.fun}")
+
+
+######## QUESTION 4 ############
+#Calculate the logistic term (time-varying autoregressive parameter) from the STAR model
+delta_star, gamma_star, alpha_star, beta_star = fitted_star[1], fitted_star[2],fitted_star[3], fitted_star[4]  # Extract alpha and beta from fitted STAR parameters
+logistic_term_star = np.zeros(len(z))
+
+#Calculate the logistic term for each time step
+for t in range(1, len(z)):
+    logistic_term_star[t] = delta_star + (gamma_star/ (1 + np.exp(alpha_star + beta_star * z[t-1])))
+
+#Plot the INDPRO_diff and time-varying autoregressive parameter
+plt.figure(figsize=(12, 6))
+
+#plot INDPRO_diff
+plt.plot(df['sasdate'], z, label='INDPRO_diff', color='blue', alpha=0.7)
+
+#Plot the time-varying autoregressive parameter
+plt.plot(df['sasdate'], logistic_term_star, label='Time-varying Autoregressive Parameter (STAR)', color='red', linestyle='--')
+
+#Add titles and labels
+plt.title('INDPRO_diff and Time-varying Autoregressive Parameter (STAR Model)', fontsize=14)
+plt.xlabel('Date')
+plt.ylabel('Values')
+plt.grid(True)
+plt.legend()
+
+plt.show()
+
+########### QUESTION 5 #################
+
+# SESTAR Model function
+def sestar_model(theta, x):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function to minimize (Sum of Squared Errors)
+def sestar_loss(theta, x):
+    residuals = sestar_model(theta, x)
+    total_loss = np.sum(residuals**2)
+    return total_loss
+
+# Function to optimize the SESTAR model
+def optimize_sestar(initial_theta, x):
+    # Set bounds for parameters: [mu, delta, gamma, alpha, beta]
+    bounds = [(-1000, 1000), (-1000, 1000), (-1000, 1000), (-1000, 10), (-10, 10)]
+
+    result_sestar = minimize(sestar_loss, initial_theta, args=(x,), method='L-BFGS-B', bounds=bounds)
+    return result_sestar
+
+# Initial guess for parameters [mu, delta, gamma, alpha, beta]
+initial_theta = [0, 0.3, 0, 0, 6]
+
+# Optimize the model
+result_sestar = optimize_sestar(initial_theta, x)
+
+# Get optimized parameters
+fitted_theta_sestar = result_sestar.x
+
+#CALCULATE ACF
+# Generate residuals based on optimized parameters
+residuals_sestar = sestar_model(fitted_theta_sestar, x)
+
+# Plot ACF of residuals
+plt.figure(figsize=(10, 6))
+plot_acf(residuals_sestar, lags=12)
+plt.title("ACF of SESTAR Model Residuals")
+plt.show()
+
+# Output results
+print(f"Total Loss: {sestar_loss(fitted_theta_sestar, x)}")
+
+##### QUESTION 6 #######
+
+# AR(1) Model function
+def ar_model(theta, x):
+    mu, delta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+    for t in range(1, T):
+        x_pred = mu + delta * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function to minimize (Sum of Squared Errors)
+def ar_loss(theta, x):
+    residuals = ar_model(theta, x)
+    total_loss = np.sum(residuals**2)
+    return total_loss
+
+# Initial guess for parameters [mu, delta]
+initial_theta_ar = [0, 0.3]
+
+# Optimize the AR(1) model
+def optimize_ar(initial_theta_ar, x):
+    result_ar = minimize(ar_loss, initial_theta_ar, args=(x,), method='BFGS')
+    return result_ar
+
+# Extract the UNRATE_diff column as the dependent variable
+x = df['UNRATE_diff'].values
+
+# Perform the optimization
+result_ar = optimize_ar(initial_theta_ar, x)
+
+############# SCORE FUNCTION
+
+# Calculate the Jacobian (numerical gradient) using numdifftools for a specific t
+def jacobian_at_t(theta, x, t):
+    # We are calculating the Jacobian at time t, using (x_t, x_{t-1})
+    jacobian_func = nd.Jacobian(lambda theta: ar_loss(theta, x[t-1:t+1]))
+    return jacobian_func(theta)
+
+##################### SIGMA J
+
+# Calculate Sigma_j
+def calculate_sigma_j(x, theta, j, T):
+    sum_cov = np.zeros((len(theta), len(theta)))  # Initialize the sum to a zero matrix
+
+    for t in range(j+2, T):
+        grad_t = jacobian_at_t(theta, x, t)  # Gradient at time t
+        grad_t_j = jacobian_at_t(theta, x, t - j)  # Gradient at time t-j
+
+        # Update the sum by adding the outer product of the two gradients
+        sum_cov += np.outer(grad_t, grad_t_j)
+
+    # Divide by T to compute the final covariance matrix Sigma_j
+    sigma_j = (1 / T) * sum_cov
+    return sigma_j
+
+# Set the value of p (maximum lag) and T (total observations)
+p = 12
+T = len(x)
+
+######### NEWEY ESTIMATOR
+
+# Calculate Sigma_0
+sigma_0 = calculate_sigma_j(x, result_ar.x, 0, T)
+
+# Initialize Sigma with Sigma_0
+Sigma = sigma_0
+
+# Sum over j from 1 to p
+for j in range(1, p+1):
+    sigma_j = calculate_sigma_j(x, result_ar.x, j, T)
+    sigma_j_transpose = sigma_j.T
+
+    # Compute the weighted sum: [1 - (j/(p + 1))] * (Sigma_j + Sigma_j')
+    weight = 1 - (j / (p + 1))
+    Sigma += weight * (sigma_j + sigma_j_transpose)
+
+########### ROBUST ERRORS
+# Extract diagonal elements from Sigma
+diagonal_elements = np.diag(Sigma)
+
+# Calculate the square root of the diagonal elements
+sqrt_diagonal_elements = np.sqrt(diagonal_elements)
+
+# Print the square roots of the diagonal elements
+print("Square roots of the diagonal elements of Sigma:")
+print(sqrt_diagonal_elements)
+
+# Retract the robust standard error of delta (since AR(1) has two parameters: mu, delta)
+rse_delta_ar = sqrt_diagonal_elements[1]
+print(f"RSE for delta (AR(1)): {rse_delta_ar}")
+
+############### LOSS FUNCTION, R SQUARED
+
+print(f"Estimated parameters (AR(1)): {result_ar.x}")
+
+# Add R-squared calculation function for AR(1)
+def calculate_r_squared_ar(x, fitted_theta):
+    mu, delta = fitted_theta
+    T = len(x)
+    x_pred = np.zeros(T-1)
+    for t in range(1, T):
+        x_pred[t-1] = mu + delta * x[t-1]
+    x_obs = x[1:]  # Observed values (omit the first value for alignment)
+    r_squared = r2_score(x_obs, x_pred)  # R-squared using sklearn
+    return r_squared
+
+# Adjusted R-squared calculation function for AR(1)
+def calculate_adjusted_r_squared_ar(x, r_squared, n_params):
+    n = len(x) - 1  # Number of observations (omit the first value for alignment)
+    adj_r_squared = 1 - (1 - r_squared) * (n - 1) / (n - n_params)
+    return adj_r_squared
+
+# Compute total loss (Sum of Squared Errors)
+total_loss_ar = ar_loss(result_ar.x, x)
+print(f"Total loss (Sum of Squared Residuals - AR(1)): {total_loss_ar}")
+
+# Compute R-squared for AR(1) model
+r_squared_ar = calculate_r_squared_ar(x, result_ar.x)
+print(f"R-squared (AR(1)): {r_squared_ar}")
+
+# Compute adjusted R-squared for AR(1) model (2 parameters: mu, delta)
+adjusted_r_squared_ar = calculate_adjusted_r_squared_ar(x, r_squared_ar, 2)
+print(f"Adjusted R-squared (AR(1)): {adjusted_r_squared_ar}")
+
+#####Q6 SESTAR #####
+
+# SESTAR Model function
+def sestar_model(theta, x):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred
+    return residuals
+
+# Objective function to minimize (Sum of Squared Errors)
+def sestar_loss(theta, x):
+    residuals = sestar_model(theta, x)
+    total_loss = np.sum(residuals**2)
+    return total_loss
+
+# Initial guess for parameters [mu, delta, gamma, alpha, beta]
+initial_theta_sestar = [0, 0.3, 0, 0, 6]
+
+# Optimize the SESTAR model
+def optimize_sestar(initial_theta_sestar, x):
+    # Define bounds corresponding to the parameters in initial_theta_sestar
+    bounds = [(-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000),  # big bounds
+              (-1000, 1000)]  # big bounds
+
+    result_sestar = minimize(sestar_loss, initial_theta_sestar, args=(x,), method='L-BFGS-B', bounds=bounds)
+    return result_sestar
+
+# Extract the UNRATE_diff column as the dependent variable
+x = df['UNRATE_diff'].values
+
+# Perform the optimization
+result_sestar = optimize_sestar(initial_theta_sestar, x)
+
+############# SCORE FUNCTION
+
+# Calculate the Jacobian (numerical gradient) using numdifftools for a specific t
+def jacobian_at_t(theta, x, t):
+    # We are calculating the Jacobian at time t, using (x_t, x_{t-1})
+    jacobian_func = nd.Jacobian(lambda theta: sestar_loss(theta, x[t-1:t+1]))
+    return jacobian_func(theta)
+
+##################### SIGMA J
+
+# Calculate Sigma_j
+def calculate_sigma_j(x, theta, j, T):
+    sum_cov = np.zeros((len(theta), len(theta)))  # Initialize the sum to a zero matrix
+
+    for t in range(j+2, T):
+        grad_t = jacobian_at_t(theta, x, t)  # Gradient at time t
+        grad_t_j = jacobian_at_t(theta, x, t - j)  # Gradient at time t-j
+
+        # Update the sum by adding the outer product of the two gradients
+        sum_cov += np.outer(grad_t, grad_t_j)
+
+    # Divide by T to compute the final covariance matrix Sigma_j
+    sigma_j = (1 / T) * sum_cov
+    return sigma_j
+
+# Set the value of p (maximum lag) and T (total observations)
+p = 12
+T = len(x)
+
+######### NEWEY ESTIMATOR
+
+# Calculate Sigma_0
+sigma_0 = calculate_sigma_j(x, result_sestar.x, 0, T)
+
+# Initialize Sigma with Sigma_0
+Sigma = sigma_0
+
+# Sum over j from 1 to p
+for j in range(1, p+1):
+    sigma_j = calculate_sigma_j(x, result_sestar.x, j, T)
+    sigma_j_transpose = sigma_j.T
+
+    # Compute the weighted sum: [1 - (j/(p + 1))] * (Sigma_j + Sigma_j')
+    weight = 1 - (j / (p + 1))
+    Sigma += weight * (sigma_j + sigma_j_transpose)
+
+########### ROBUST ERRORS
+# Extract diagonal elements from Sigma
+diagonal_elements = np.diag(Sigma)
+
+# Calculate the square root of the diagonal elements
+sqrt_diagonal_elements = np.sqrt(diagonal_elements)
+
+# Print the square roots of the diagonal elements
+print("Square roots of the diagonal elements of Sigma:")
+print(sqrt_diagonal_elements)
+
+# Retract the robust se of gamma for Q7
+rse_gamma_sestar = sqrt_diagonal_elements[2]
+print(f"RSE for gamma (SESTAR): {rse_gamma_sestar}")
+
+############### LOSS FUNCTION, R SQUARED
+
+print(f"Estimated parameters (SESTAR): {result_sestar.x}")
+
+# Add R-squared calculation function
+def calculate_r_squared_sestar(x, fitted_theta):
+    mu, delta, gamma, alpha, beta = fitted_theta
+    T = len(x)
+    x_pred = np.zeros(T-1)
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * x[t-1]))
+        x_pred[t-1] = mu + (delta + gamma * logistic_term) * x[t-1]
+    x_obs = x[1:]  # Observed values (omit the first value for alignment)
+    r_squared = r2_score(x_obs, x_pred)  # R-squared using sklearn
+    return r_squared
+
+# Adjusted R-squared calculation function
+def calculate_adjusted_r_squared_sestar(x, r_squared, n_params):
+    n = len(x) - 1  # Number of observations (omit the first value for alignment)
+    adj_r_squared = 1 - (1 - r_squared) * (n - 1) / (n - n_params)
+    return adj_r_squared
+
+# Compute total loss (Sum of Squared Errors)
+total_loss_sestar = sestar_loss(result_sestar.x, x)
+print(f"Total loss (Sum of Squared Residuals - SESTAR): {total_loss_sestar}")
+
+# Compute R-squared for SESTAR model
+r_squared_sestar = calculate_r_squared_sestar(x, result_sestar.x)
+print(f"R-squared (SESTAR): {r_squared_sestar}")
+
+# Compute adjusted R-squared for SESTAR model (5 parameters: mu, delta, gamma, alpha, beta)
+adjusted_r_squared_sestar = calculate_adjusted_r_squared_sestar(x, r_squared_sestar, 5)
+print(f"Adjusted R-squared (SESTAR): {adjusted_r_squared_sestar}")
+
+
+####STAR
+# STAR Model function
+def star_model(theta, x, z):
+    mu, delta, gamma, alpha, beta = theta
+    T = len(x)
+    residuals = np.zeros(T-1)
+
+    for t in range(1, T):
+        # Logistic transition function based on z[t-1]
+        logistic_term = 1 / (1 + np.exp(alpha + beta * z[t-1]))
+        x_pred = mu + (delta + gamma * logistic_term) * x[t-1]
+        residuals[t-1] = x[t] - x_pred  # Residuals = observed - predicted
+    return residuals
+
+# Objective function to minimize (Sum of Squared Errors)
+def star_loss(theta, x, z):
+    residuals = star_model(theta, x, z)
+    total_loss = np.sum(residuals**2)  # Sum of squared residuals
+    return total_loss
+
+# Initial guess for parameters [mu, delta, gamma, alpha, beta]
+initial_theta_star = [0, 0.3, 1, 0, 2]
+
+# Optimize the STAR model
+def optimize_star(initial_theta_star, x, z):
+    # Define bounds corresponding to the parameters in initial_theta_star
+    bounds = [(-1000, 1000),  # bounds for mu
+              (-1000, 1000),  # bounds for delta
+              (-1000, 1000),  # bounds for gamma
+              (-1000, 1000),  # bounds for alpha
+              (-1000, 1000)]  # bounds for beta
+
+    result_star = minimize(star_loss, initial_theta_star, args=(x, z), method='L-BFGS-B', bounds=bounds)
+    return result_star
+
+# Extract the UNRATE_diff and INDPRO_diff columns as the dependent variable and transition variable
+x = df['UNRATE_diff'].values
+z = df['INDPRO_diff'].values
+
+# Perform the optimization
+result_star = optimize_star(initial_theta_star, x, z)
+
+# Check if optimization was successful and print results
+if result_star.success:
+    print("STAR model optimization converged successfully.")
+    print(f"Optimized parameters: {result_star.x}")
+else:
+    print(f"STAR model optimization failed: {result_star.message}")
+
+print(f"Final function value (STAR): {result_star.fun}")
+
+############# SCORE FUNCTION
+
+# Calculate the Jacobian (numerical gradient) using numdifftools for a specific t
+def jacobian_at_t_star(theta, x, z, t):
+    # We are calculating the Jacobian at time t, using (x_t, z_{t-1})
+    jacobian_func = nd.Jacobian(lambda theta: star_loss(theta, x[t-1:t+1], z[t-1:t+1]))
+    return jacobian_func(theta)
+
+##################### SIGMA J
+
+# Calculate Sigma_j
+def calculate_sigma_j_star(x, z, theta, j, T):
+    sum_cov = np.zeros((len(theta), len(theta)))  # Initialize the sum to a zero matrix
+
+    for t in range(j+2, T):
+        grad_t = jacobian_at_t_star(theta, x, z, t)  # Gradient at time t
+        grad_t_j = jacobian_at_t_star(theta, x, z, t - j)  # Gradient at time t-j
+
+        # Update the sum by adding the outer product of the two gradients
+        sum_cov += np.outer(grad_t, grad_t_j)
+
+    # Divide by T to compute the final covariance matrix Sigma_j
+    sigma_j = (1 / T) * sum_cov
+    return sigma_j
+
+# Set the value of p (maximum lag) and T (total observations)
+p = 12
+T = len(x)
+
+######### NEWEY ESTIMATOR
+
+# Calculate Sigma_0
+sigma_0 = calculate_sigma_j_star(x, z, result_star.x, 0, T)
+
+# Initialize Sigma with Sigma_0
+Sigma = sigma_0
+
+# Sum over j from 1 to p
+for j in range(1, p+1):
+    sigma_j = calculate_sigma_j_star(x, z, result_star.x, j, T)
+    sigma_j_transpose = sigma_j.T
+
+    # Compute the weighted sum: [1 - (j/(p + 1))] * (Sigma_j + Sigma_j')
+    weight = 1 - (j / (p + 1))
+    Sigma += weight * (sigma_j + sigma_j_transpose)
+
+# Print the final result for Sigma
+print(f"Sigma (final result for p = {p}):")
+print(Sigma)
+
+########### ROBUST ERRORS
+# Extract diagonal elements from Sigma
+diagonal_elements = np.diag(Sigma)
+
+# Calculate the square root of the diagonal elements
+sqrt_diagonal_elements = np.sqrt(diagonal_elements)
+
+# Print the square roots of the diagonal elements
+print("Square roots of the diagonal elements of Sigma:")
+print(sqrt_diagonal_elements)
+
+# Retract the robust se of gamma for Q7
+rse_gamma_star = sqrt_diagonal_elements[2]
+
+############### LOSS FUNCTION, R SQUARED
+
+print(f"Estimated parameters (SESTAR): {result_star.x}")
+
+# Add R-squared calculation function
+def calculate_r_squared_star(x, z, fitted_theta):
+    mu, delta, gamma, alpha, beta = fitted_theta
+    T = len(x)
+    x_pred = np.zeros(T-1)
+    for t in range(1, T):
+        logistic_term = 1 / (1 + np.exp(alpha + beta * z[t-1]))
+        x_pred[t-1] = mu + (delta + gamma * logistic_term) * x[t-1]
+    x_obs = x[1:]  # Observed values (omit the first value for alignment)
+    r_squared = r2_score(x_obs, x_pred)  # R-squared using sklearn
+    return r_squared
+
+# Adjusted R-squared calculation function
+def calculate_adjusted_r_squared_star(x, r_squared, n_params):
+    n = len(x) - 1  # Number of observations (omit the first value for alignment)
+    adj_r_squared = 1 - (1 - r_squared) * (n - 1) / (n - n_params)
+    return adj_r_squared
+
+# Compute total loss (Sum of Squared Errors)
+total_loss_star = star_loss(result_star.x, x, z)
+print(f"Total loss (Sum of Squared Residuals - STAR): {total_loss_star}")
+
+# Compute R-squared for the STAR model
+r_squared_star = calculate_r_squared_star(x, z, result_star.x)
+print(f"R-squared (STAR): {r_squared_star}")
+
+# Compute adjusted R-squared for the STAR model (5 parameters: mu, delta, gamma, alpha, beta)
+adjusted_r_squared_star = calculate_adjusted_r_squared_star(x, r_squared_star, 5)
+print(f"Adjusted R-squared (STAR): {adjusted_r_squared_star}")
+
+
+######### QUESTION 7 ############
+# Retract the gamma estimate from the fitted STAR and SESTAR model in Q3
+sestar_gamma = fitted_sestar[2]
+star_gamma = fitted_star[2]
+
+# Perform t-test for SESTAR
+t_stat_sestar = sestar_gamma / rse_gamma_sestar  # T-statistic for SESTAR
+df_sestar = len(x) - 5  # Degrees of freedom (number of observations - number of parameters)
+
+# Compute the two-tailed p-value for SESTAR
+p_value_sestar = 2 * (1 - stats.t.cdf(abs(t_stat_sestar), df_sestar))
+
+# Output the results for SESTAR
+print(f"SESTAR Model - Estimate (gamma): {sestar_gamma}")
+print(f"SESTAR Model - Robust SE: {rse_gamma_sestar}")
+print(f"SESTAR Model - t-statistic: {t_stat_sestar}, p-value: {p_value_sestar}")
+
+# Perform t-test for STAR
+t_stat_star = star_gamma / rse_gamma_star  # T-statistic for STAR
+df_star = len(x) - 5  # Degrees of freedom
+
+# Compute the two-tailed p-value for STAR
+p_value_star = 2 * (1 - stats.t.cdf(abs(t_stat_star), df_star))
+
+# Output the results for STAR
+print(f"STAR Model - Estimate (gamma): {star_gamma}")
+print(f"STAR Model - Robust SE: {rse_gamma_star}")
+print(f"STAR Model - t-statistic: {t_stat_star}, p-value: {p_value_star}")
